@@ -1,0 +1,17 @@
+/*Custom CSS Styles*/
+/*See https://www.w3schools.com/css/default.asp for examples*/
+
+h1 {
+  color: #002D6D;
+  text-align: center;
+}
+
+h2 {
+  color: #002D6D;
+}
+
+/*This causes page breaks before h2 sections when printing except for */
+@media print {
+  h2:not(:first-child) {page-break-before:always}
+}
+

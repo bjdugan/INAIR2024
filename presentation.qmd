@@ -1,0 +1,273 @@
+---
+title: "Toward Dynamic Reporting with R Markdown"
+author: "Brendan Dugan, Research Associate, National Survey of Student Engagement"
+format: 
+  revealjs:
+    incremental: true
+    footer: "INAIR March 22, 2024"
+    logo: presentation_files/NSSE_clear_small.png
+    smaller: true
+    theme: night
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+library(knitr)
+library(stringr)
+library(kableExtra)
+
+data <- readRDS("data.rds") |> 
+  tibble()
+dictionary <- readRDS("dictionary.rds") |> 
+  tibble()
+```
+
+## Overview
+ - Background  
+ - Motivation  
+ - R Markdown  
+ - Examples
+ - Discussion
+
+## Background {.scrollable}
+ - Assessing Quality and Equity in High-Impact Practices ["HIP Quality study"](https://nsse.indiana.edu/support-resources/partnerships/special-projects/hip-quality/index.html)
+ - How do we know HIPs are High-Impact, not just labelled such?  
+ - Eight elements of quality (organizing themes):  
+   1. High performance expectations
+   2. Significant time investment
+   3. Substantive interactions with faculty & peers
+   4. Frequent and constructive feedback  
+   5. Diversity experiences
+   6. Reflection and integration
+   7. Real-world application
+   8. Demonstration of competence
+
+## Background: HIP Quality
+ - 2018 pilot, summer 2019 via Qualtrics & NSSE  
+ - ~21,000 students at 58 institutions
+ - Internships (28%), Service-learning (29%), SR Culminating (12%) were most popular  
+ - INAIR 2020: Simple Reproducible Survey Reporting
+
+## Background: HIPs in Practice
+ - Pandemic!  
+ - Second phase ("HIPs in Practice") focused on learning communities and senior culminating experiences  
+ - Critique: not every HIP is the same! "Quality" not global  
+ - 2,330 students in 44 learning communities and 49 senior culminating experiences at 15 institutions  
+ - [Report](https://nsse.indiana.edu/research/special-projects/hip-quality/hips-in-practice-report.html)  
+
+## Motivation
+:::: {.columns} 
+::: {.column width=70%}
+ - in-house surveys: collaborate on instrument, administer, summarize, and report.
+ - Lots of repetition! Tedious! Error-prone!  
+ - If I have the `dictionary`, why not use that to get report content instead? _It's all just data_
+
+```{r}
+head(dictionary) |> 
+  select(item, theme, text) |> 
+  mutate(text = str_trunc(text, 60)) 
+```
+:::
+
+::: {.column width=30%}
+![Survey workflow](presentation_files/report example.png)
+:::
+::::
+
+## Motivation
+
+:::: {.columns} 
+::: {.column width=50%}
+![Qualtrics survey txt](presentation_files/qualtrix programmed survey.png)
+:::
+
+::: {.column width=50%}
+![Survey workflow](presentation_files/report example improved.png)
+:::
+::::
+
+## R Markdown
+Compile prose, code, `r paste0("output", ",", collapse = "")` and plots in one environment (R). Reproducible, adaptable, scalable.
+
+```{r, echo=TRUE, fig.width=8}
+mutate(mtcars, am = factor(am, labels = c("Automatic", "Manual"))) |> 
+  ggplot(aes(x = wt, y = mpg, color = am)) +
+  geom_point(size = 5) + 
+  theme_minimal(base_size = 14) + 
+  labs(title = "Motor Trends Cars, MPG by weight and transmission", 
+       x = "Weight (1,000 lbs)")
+```
+
+## R Markdown
+![](presentation_files/rmarkdown example.png)
+
+## Reporting requirements
+ - For each institution, a number of programs in either Learning Communities or SR Culminating Experiences
+ - lots of questions with similar response options, stems  
+ - some HIP-specific item blocks  
+ - lots of repeated chunks ~95% similar  
+
+## Setup
+```{r, eval=FALSE, echo=TRUE}
+# YAML ---
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    theme: paper
+    css: styles.css
+params: 
+  unitid: 888888
+  inst_name: "NSSEville State University"
+# ---
+# R
+library(dplyr)
+library(knitr)
+library(tidyr)
+
+data <- readRDS("data.rds")
+dictionary <- readRDS("dictionary.rds")
+
+my_colors <- "#002D6D"
+
+# custom functions:
+# summarize data
+# apply styles to tables
+# write chunks
+
+```
+ 
+## Code to generate code
+ - Markdown document contains text as text, text decoration (RMD, HTML), or R code  
+ - R code generates text that gets evaluated as RMD code chunks  
+ - Handles control structure for different programs and HIPs  
+ 
+```{r, echo=TRUE, eval=FALSE}
+x <- "Significant Time Investment" # theme
+i <- "My Learning Community" # program
+write_chunk <- function(x) {
+  # Writes the chunk to be interpreted as-is 
+  cat("\n\n##", x, "{.tabset .tabset-fade .tabset-pills}", 
+      paste0("\n", unique(filter(dictionary, theme == x)$theme_desc)) ),
+  cat("\n")
+  cat("####", i, "\n")
+  # some summarizing functions
+  # some table styling
+  print()
+  cat("\n")
+}
+```
+
+## Example: Significant Time Investment
+![](presentation_files/rmd formatting basic.png)
+
+## Some summarizing functions
+```{r, eval=TRUE, echo=TRUE}
+x <- "Significant Time Investment" # theme
+i <- "My Learning Community" # program
+# Some summarizing functions
+filter(data, prog_name == i) %>%
+  select(prog_name, 
+         all_of(filter(dictionary, theme == x)$item)
+         ) %>%
+  pivot_longer(-prog_name) %>% 
+  count(name, value) %>%
+  filter(value != "(Missing)") %>%
+  mutate(p = n / sum(n) * 100, .by = name)
+```
+
+```{r,include=FALSE}
+t1 <- filter(data, prog_name == i) %>%
+  select(prog_name, 
+         all_of(filter(dictionary, theme == x)$item)
+         ) %>%
+  pivot_longer(-prog_name) %>% 
+  count(name, value) %>% 
+  filter(value != "(Missing)") %>%
+  mutate(p = n / sum(n) * 100, .by = name)
+```
+
+## Some table styling {.scrollable}
+```{r, echo=TRUE}
+style_table <- function(x, cptn = NA) {
+  # group/pack rows for the stem headers, then style
+    kable(x, 
+          format = "html",
+          digits = 0, 
+          format.args = list(big.mark = ","), 
+          caption = cptn) %>% 
+    kable_styling(full_width = FALSE,
+                  bootstrap_options = c("striped", "hover", "condensed"),
+                  fixed_thead = TRUE 
+    ) %>%
+    pack_rows(index = unlist(
+      list("Time spent vs. typical learning experience" = 5, 
+           "Effort vs. typical learning experience" = 5) ), 
+              label_row_css = "color:#002D6D"
+    )
+}
+style_table(t1, cptn = "Example title")
+```
+
+## Code to generate code
+ - extend `write_chunk()` to loop over each program and HIP-specific items
+ - extend `style_table()` to link full text from dictionary, index dynamically
+ - one chunk calls `write_chunk()`, generates ~90% of report content
+ - separate `.r` maps institution parameters to `render()` each report, save data
+
+```{r, eval=FALSE, echo=TRUE}
+chunks_to_make <- c("Significant Time Investment", "Learning Communities")
+#```{r, chunks='asis'}
+for (m in chunks_to_make) {
+  cat("\n")
+  write_chunk(m)
+  cat("\n")
+}
+#```
+```
+
+## Report.rmd Content
+
+```{r, echo=TRUE}
+x <- readLines("HIPs in Practice Report demo.Rmd")
+bind_rows(
+  tibble(line = 1, text = "start"),
+  tibble(line = grep("```\\{r|^#{2}\\s", x), 
+       text = x[grep("```\\{r|^#{2}\\s", x)]),
+  tibble(line = length(x), text = "end")
+) |> 
+  mutate(p = (lead(line) - line) / length(x) * 100)
+```
+
+
+## Discussion
+ - Where something is repeated, write a function
+ - Process > Product: _How do I get there?_ vs. _What do I need?_
+
+:::: {.columns}
+::: {.column width=50%}
+Pros:  
+ - Most effort in writing, testing functions  
+ - Consistent  
+ - Fast iteration & running reports  
+ - Simple  
+ - Markdown formatting is **easy**  
+ - model for similar projects  
+
+:::
+
+::: {.column width=50%}
+Cons:  
+ - Trial and error  
+ - Simple reports: no interactivity, comparisons, visualizations  
+ - Printing  
+
+:::
+::::
+
+
+
